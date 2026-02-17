@@ -92,10 +92,12 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         # This ensures each property shows different figures
         mock_data = {
             'prop-001': {'total': '1000.00', 'count': 3},
-            'prop-002': {'total': '4975.50', 'count': 4}, 
+            'prop-002': {'total': '4975.50', 'count': 4},
             'prop-003': {'total': '6100.50', 'count': 2},
             'prop-004': {'total': '1776.50', 'count': 4},
-            'prop-005': {'total': '3256.00', 'count': 3}
+            'prop-005': {'total': '3256.00', 'count': 3},
+            # Precision test: 2.675 rounds wrongly with float (e.g. to 2.67); use property_id=prop-precision-demo
+            'prop-precision-demo': {'total': '2.675', 'count': 1},
         }
         
         mock_property_data = mock_data.get(property_id, {'total': '0.00', 'count': 0})

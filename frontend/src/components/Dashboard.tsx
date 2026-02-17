@@ -6,7 +6,8 @@ const PROPERTIES = [
   { id: 'prop-002', name: 'City Apartment Downtown' },
   { id: 'prop-003', name: 'Country Villa Estate' },
   { id: 'prop-004', name: 'Lakeside Cottage' },
-  { id: 'prop-005', name: 'Urban Loft Modern' }
+  { id: 'prop-005', name: 'Urban Loft Modern' },
+  { id: 'prop-precision-demo', name: 'Precision Demo' },
 ];
 
 const Dashboard: React.FC = () => {
