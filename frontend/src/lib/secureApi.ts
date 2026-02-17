@@ -11,7 +11,6 @@
 
 import { supabase } from './supabase';
 import { sessionManager } from '../utils/sessionManager';
-import { withRetry, handleApiError, classifyError } from '../utils/apiErrorHandler';
 
 // Get backend URL with fallback for misconfigured production environments
 const getBackendUrl = () => {
@@ -73,8 +72,13 @@ export class SecureAPIClient {
    */
   private interceptDirectQueries() {
     if (import.meta.env.DEV) {
-      const ENFORCE = (import.meta.env as any).VITE_ENFORCE_SECURE_API === 'true';
-      const originalFrom = supabase.from;
+      const env = import.meta.env as Record<string, unknown>;
+      const ENFORCE = env.VITE_ENFORCE_SECURE_API === 'true';
+      const supabaseWithFrom = supabase as { from?: (table: string) => unknown };
+      const originalFrom = supabaseWithFrom.from;
+      if (typeof originalFrom !== 'function') {
+        return;
+      }
       // Temporary dev allowlist for legacy direct queries while migrating to SecureAPI
       const DEV_ALLOWLIST = new Set([
         'user_permissions',
@@ -84,7 +88,7 @@ export class SecureAPIClient {
         'landlord_details'
       ]);
 
-      supabase.from = (table: string) => {
+      supabaseWithFrom.from = (table: string) => {
         const stack = new Error().stack || '';
         const violation = `SECURITY VIOLATION: Direct Supabase query to table '${table}'`;
 
@@ -95,7 +99,7 @@ export class SecureAPIClient {
             // Record violation for later review, but don't block
             this.securityViolations.push(violation + ' (allowed in DEV)');
           }
-          return originalFrom.call(supabase, table);
+          return originalFrom.call(supabaseWithFrom, table);
         }
 
         // Strict enforcement in DEV when VITE_ENFORCE_SECURE_API=true
@@ -411,7 +415,7 @@ export class SecureAPIClient {
 
     // Always cache properly structured responses, even if empty
     // Empty results can be legitimate for users without tenant access or specific date ranges
-    if (data && typeof data === 'object' && (data.hasOwnProperty('items') || data.hasOwnProperty('data') || data.hasOwnProperty('total'))) {
+    if (data && typeof data === 'object' && (Object.prototype.hasOwnProperty.call(data, 'items') || Object.prototype.hasOwnProperty.call(data, 'data') || Object.prototype.hasOwnProperty.call(data, 'total'))) {
       return true; // Cache all properly structured responses
     }
 
@@ -467,6 +471,7 @@ export class SecureAPIClient {
    * Wait for a valid Supabase session (with timeout) so API calls don't race login.
    */
   private async waitForSession(timeoutMs: number = 7000): Promise<import('@supabase/supabase-js').Session | null> {
+    type SessionLike = import('@supabase/supabase-js').Session;
     // Helper to read token from Supabase storage as last resort
     const getTokenFromStorage = (): string | null => {
       try {
@@ -481,7 +486,9 @@ export class SecureAPIClient {
             if (token) return token;
           }
         }
-      } catch { }
+      } catch {
+        // Ignore storage read errors
+      }
       return null;
     };
 
@@ -492,45 +499,53 @@ export class SecureAPIClient {
 
     // Fast path
     const initial = await supabase.auth.getSession();
-    if (initial.data.session?.access_token) return initial.data.session;
+    if (initial.data.session?.access_token) return initial.data.session as SessionLike;
     const storageToken = getTokenFromStorage();
     if (storageToken) {
-      // Construct a minimal session object shape with access_token
-      return { access_token: storageToken } as any;
+      return { access_token: storageToken, refresh_token: '' } as SessionLike;
     }
 
     // Listen + poll concurrently
     let unsubscribe: (() => void) | null = null;
     let resolved = false;
-    const sessionPromise = new Promise<import('@supabase/supabase-js').Session | null>((resolve) => {
+    const sessionPromise = new Promise<SessionLike | null>((resolve) => {
       const { data } = supabase.auth.onAuthStateChange((_event, session) => {
         if (!resolved && session?.access_token) {
           resolved = true;
-          if (unsubscribe) unsubscribe();
-          resolve(session);
+          const fn: (() => void) | null = unsubscribe;
+          if (fn) fn();
+          resolve(session as SessionLike);
         }
       });
-      unsubscribe = () => data.subscription.unsubscribe();
+      const sub = data as { subscription?: { unsubscribe?: () => void } };
+      const unsubFn = sub?.subscription?.unsubscribe;
+      unsubscribe = typeof unsubFn === 'function'
+        ? ((): void => { (unsubFn as () => void)(); })
+        : null;
     });
 
-    const pollingPromise = new Promise<import('@supabase/supabase-js').Session | null>(async (resolve) => {
-      const start = Date.now();
-      while (Date.now() - start < timeoutMs) {
-        const token = await nowHasToken();
-        if (token) {
-          resolved = true;
-          if (unsubscribe) unsubscribe();
-          resolve({ access_token: token } as any);
-          return;
+    const pollingPromise = new Promise<SessionLike | null>((resolve) => {
+      void (async () => {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          const token = await nowHasToken();
+          if (token) {
+            resolved = true;
+            const fn: (() => void) | null = unsubscribe;
+            if (fn) fn();
+            resolve({ access_token: token, refresh_token: '' } as SessionLike);
+            return;
+          }
+          await new Promise(r => setTimeout(r, 200));
         }
-        await new Promise(r => setTimeout(r, 200));
-      }
-      resolve(null);
+        resolve(null);
+      })();
     });
 
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
     const result = await Promise.race([sessionPromise, pollingPromise, timeoutPromise]);
-    if (unsubscribe) unsubscribe();
+    const teardown = unsubscribe as (() => void) | null;
+    if (typeof teardown === 'function') teardown();
     return result;
   }
 
@@ -645,7 +660,11 @@ export class SecureAPIClient {
 
         if (!response.ok) {
           let bodyText = '';
-          try { bodyText = await response.text(); } catch { }
+          try {
+            bodyText = await response.text();
+          } catch {
+            // Use empty string if response body cannot be read
+          }
           let detail = '';
           let errorData = null;
 

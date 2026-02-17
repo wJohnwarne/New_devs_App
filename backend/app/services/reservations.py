@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
     """
@@ -16,7 +16,7 @@ async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_
     print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
 
     # SQL Simulation (This would be executed against the actual DB)
-    query = """
+    _query = """
         SELECT SUM(total_amount) as total
         FROM reservations
         WHERE property_id = $1
@@ -88,19 +88,20 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
     except Exception as e:
         print(f"Database error for {property_id} (tenant: {tenant_id}): {e}")
         
-        # Create property-specific mock data for testing when DB is unavailable
-        # This ensures each property shows different figures
+        # Tenant-scoped mock data for testing when DB is unavailable (key: (tenant_id, property_id))
         mock_data = {
-            'prop-001': {'total': '1000.00', 'count': 3},
-            'prop-002': {'total': '4975.50', 'count': 4},
-            'prop-003': {'total': '6100.50', 'count': 2},
-            'prop-004': {'total': '1776.50', 'count': 4},
-            'prop-005': {'total': '3256.00', 'count': 3},
-            # Precision test: 2.675 rounds wrongly with float (e.g. to 2.67); use property_id=prop-precision-demo
-            'prop-precision-demo': {'total': '2.675', 'count': 1},
+            ('tenant-a', 'prop-001'): {'total': '1000.00', 'count': 3},
+            ('tenant-a', 'prop-002'): {'total': '4975.50', 'count': 4},
+            ('tenant-a', 'prop-003'): {'total': '6100.50', 'count': 2},
+            ('tenant-b', 'prop-001'): {'total': '0.00', 'count': 0},
+            ('tenant-b', 'prop-004'): {'total': '1776.50', 'count': 4},
+            ('tenant-b', 'prop-005'): {'total': '3256.00', 'count': 3},
+            # Precision test: 2.675 rounds wrongly with float; available for both tenants
+            ('tenant-a', 'prop-precision-demo'): {'total': '2.675', 'count': 1},
+            ('tenant-b', 'prop-precision-demo'): {'total': '2.675', 'count': 1},
         }
-        
-        mock_property_data = mock_data.get(property_id, {'total': '0.00', 'count': 0})
+        mock_key = (tenant_id, property_id)
+        mock_property_data = mock_data.get(mock_key, {'total': '0.00', 'count': 0})
         
         return {
             "property_id": property_id,
