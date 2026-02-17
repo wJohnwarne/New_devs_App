@@ -1487,6 +1487,13 @@ export class SecureAPIClient {
     return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
   }
 
+  /**
+   * Get current tenant's properties for the dashboard dropdown.
+   */
+  async getDashboardProperties(): Promise<Array<{ id: string; name: string }>> {
+    return this.request<Array<{ id: string; name: string }>>('/api/v1/dashboard/properties');
+  }
+
   async uploadCompanyLogo(logo_url: string) {
     return this.request<any>('/api/v1/company-settings/logo', {
       method: 'POST',

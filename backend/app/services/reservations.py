@@ -98,7 +98,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             ('tenant-b', 'prop-005'): {'total': '3256.00', 'count': 3},
             # Precision test: 2.675 rounds wrongly with float; available for both tenants
             ('tenant-a', 'prop-precision-demo'): {'total': '2.675', 'count': 1},
-            ('tenant-b', 'prop-precision-demo'): {'total': '2.675', 'count': 1},
+            ('tenant-b', 'prop-precision-demo'): {'total': '3.675', 'count': 1},
         }
         mock_key = (tenant_id, property_id)
         mock_property_data = mock_data.get(mock_key, {'total': '0.00', 'count': 0})
